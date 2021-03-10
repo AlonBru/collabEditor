@@ -1,3 +1,4 @@
+import axios from 'axios';
 import firebase from 'firebase/app';
 import 'firebase/messaging';
 
@@ -21,6 +22,11 @@ export const getToken = (setTokenFound) => {
       setTokenFound(true);
       // Track the token -> client mapping, by sending to backend server
       // show on the UI that permission is secured
+      
+      axios.post('/register',{token:currentToken})
+      .then(console.log)
+      .catch(console.error)
+
     } else {
       console.log('No registration token available. Request permission to generate one.');
       setTokenFound(false);

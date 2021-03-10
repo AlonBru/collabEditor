@@ -1,5 +1,6 @@
-import {useState} from 'react'
+import { useState, useEffect} from 'react'
 import './App.css';
+import axios from 'axios'
 import { getToken, onMessageListener} from './firebase'
 
 function App() {
@@ -7,9 +8,11 @@ function App() {
   const [notification, setNotification] = useState({title: '', body: ''});
   const [isTokenFound, setTokenFound] = useState(false);
 
-  getToken(setTokenFound);
+  useEffect(()=>{
+    // console.log('aha');
+    getToken(setTokenFound);
+  },[])
   
-  console.log(process.env.REACT_APP_TEST);
 
   onMessageListener().then(payload => {
     setShow(true);
@@ -22,6 +25,11 @@ function App() {
       <header className="App-header">
         {isTokenFound && <h1> Notification permission enabled 👍🏻 </h1>}
         {!isTokenFound && <h1> Need notification permission ❗️ </h1>}
+        <button onClick={()=>{
+            axios.post('/message')
+        }}>
+          Send
+        </button>
         <p>
           message:{notification.title}
         </p>
