@@ -1,6 +1,6 @@
 // require('dotenv').config()
 const express = require('express') 
-
+require('automerge')
 const app = express()
 const admin = require("firebase-admin");
 
@@ -48,6 +48,7 @@ app.post('/register',( req , res ) => {
 
   res.status(200).send()
 })
+
 app.post('/message',( req , res ) => {
   console.log(users[0]);
   const message = {
@@ -55,13 +56,13 @@ app.post('/message',( req , res ) => {
       title: 'hi',
       body: 'wassap ' + ++num,
     },
-    token: users[0]
+    tokens: users
   };
 
   // Send a message to the device corresponding to the provided
   // registration token.
   // if(num>2) return
-  admin.messaging().send(message,false)
+  admin.messaging().sendMulticast(message,false)
     .then((response) => {
       // Response is a message ID string.
       console.log('Successfully sent message:', response);
@@ -73,4 +74,37 @@ app.post('/message',( req , res ) => {
 
   res.status(200).send()
 })
+
+app.post('/text',( req , res ) => {
+  const {text} = req.body
+  const message = {
+    data: {
+      text:text
+    },
+    tokens: users
+  };
+
+  // Send a message to the device corresponding to the provided
+  // registration token.
+  // if(num>2) return
+  admin.messaging().sendMulticast(message,false)
+    .then((response) => {
+      // Response is a message ID string.
+      console.log('Successfully sent message:', response);
+    })
+    .catch((error) => {
+      console.log('Error sending message:', error);
+    });
+
+
+  res.status(200).send()
+})
+
+app.delete('/unregister', ( req, res ) => {
+  console.log('unregister');
+  const {token} = req.body
+  users = users.filter(token)
+  res.status(200)
+})
+
 module.exports = app

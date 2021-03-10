@@ -7,17 +7,18 @@ function App() {
   const [show, setShow] = useState(false);
   const [notification, setNotification] = useState({title: '', body: ''});
   const [isTokenFound, setTokenFound] = useState(false);
-
+  const [text,setText] = useState('')
   useEffect(()=>{
     // console.log('aha');
-    getToken(setTokenFound);
+    getToken(setTokenFound); 
   },[])
   
 
   onMessageListener().then(payload => {
+    console.log('data',payload);
     setShow(true);
-    setNotification({title: payload.notification.title, body: payload.notification.body})
-    console.log(payload);
+    setText( payload.data.text)
+    
   }).catch(err => console.log('failed: ', err));
 
   return (
@@ -25,11 +26,17 @@ function App() {
       <header className="App-header">
         {isTokenFound && <h1> Notification permission enabled 👍🏻 </h1>}
         {!isTokenFound && <h1> Need notification permission ❗️ </h1>}
-        <button onClick={()=>{
-            axios.post('/message')
-        }}>
-          Send
-        </button>
+        
+        <textarea
+          name='text'
+          value={text}
+          onChange={(e)=>{
+            axios.post('/text',{text:e.target.value})
+          }}
+        >
+
+        </textarea>
+
         <p>
           message:{notification.title}
         </p>

@@ -26,7 +26,7 @@ export const getToken = (setTokenFound) => {
       axios.post('/register',{token:currentToken})
       .then(console.log)
       .catch(console.error)
-
+      
     } else {
       console.log('No registration token available. Request permission to generate one.');
       setTokenFound(false);
