@@ -4,40 +4,40 @@ import {EditorView} from "prosemirror-view"
 import {DOMParser, Schema} from "prosemirror-model"
 import {schema} from "prosemirror-schema-basic"
 import {addListNodes} from "prosemirror-schema-list"
-import {exampleSetup} from "prosemirror-example-setup"
+// import {exampleSetup} from "prosemirror-example-setup"
 import {keymap} from "prosemirror-keymap"
 import {baseKeymap} from "prosemirror-commands"
-import {collab} from "prosemirror-collab"
+import * as collab from "prosemirror-collab"
 
 import './Editor.css';
 
 
-function Editor1() {
-  useEffect(() => {
-      const mySchema = new Schema({
-          nodes: addListNodes(schema.spec.nodes, "paragraph block*", "block"),
-          marks: schema.spec.marks
-      })
+// function Editor1() {
+//   useEffect(() => {
+//       const mySchema = new Schema({
+//           nodes: addListNodes(schema.spec.nodes, "paragraph block*", "block"),
+//           marks: schema.spec.marks
+//       })
 
-      window.view = new EditorView(document.querySelector("#editor"), {
-          state: EditorState.create({
-              doc: DOMParser.fromSchema(mySchema).parse(document.querySelector("#content")),
-              plugins: exampleSetup({schema: mySchema})
-          }),
-          handlePaste(view,e,slice){
-            console.log(view);
-            return true
-          }
-      })
-  },[]);
+//       window.view = new EditorView(document.querySelector("#editor"), {
+//           state: EditorState.create({
+//               doc: DOMParser.fromSchema(mySchema).parse(document.querySelector("#content")),
+//               plugins: exampleSetup({schema: mySchema})
+//           }),
+//           handlePaste(view,e,slice){
+//             console.log(view);
+//             return true
+//           }
+//       })
+//   },[]);
 
-  return (
-    <div className="App">
-        <div id="editor" />
-        <div id="content" />
-    </div>
-  );
-}
+//   return (
+//     <div className="App">
+//         <div id="editor" />
+//         <div id="content" />
+//     </div>
+//   );
+// }
 
 function Editor ( ) { 
   const [state,setState] = useState(EditorState.create({
@@ -50,7 +50,7 @@ function Editor ( ) {
   useLayoutEffect(
     ()=>{
       let view = new EditorView(
-        document.querySelector('#editor'),
+        document.querySelector('#editor')!,
         {
           state,
           dispatchTransaction(transaction) {
@@ -79,7 +79,7 @@ function Editor ( ) {
 
 }
 
-function collabEditor(authority, place) {
+function collabEditor(authority:any, place:any) {
   let view = new EditorView(place, {
     state: EditorState.create({
       doc: authority.doc,
@@ -133,3 +133,4 @@ export default Editor;
 //   // doc1 + transaction = doc2
 // });
   
+
