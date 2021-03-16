@@ -3,6 +3,7 @@ import axios from 'axios'
 // import { db, getToken, onMessageListener} from './firebase'
 import './App.css';
 import { db } from './firebase'
+import Editor from './Editor'
 import * as jsondiffpatch from 'jsondiffpatch'
 
 // const jdf = require('jsondiffpatch').create()
@@ -43,51 +44,13 @@ function App() {
         <h1>
           collabitor
         </h1>
-        {file && 
-          <textarea
-            style={{
-              height:'60vh',
-              width:'70vw',
-            }}
-            ref={inputRef}
-            onChange={e=>{
-              const {value} = e.target
-              if(debounceRef.current){
-                clearTimeout(debounceRef.current)
-              }
-              debounceRef.current=setTimeout(
-                async ()=>{
-                  await db.collection('files').doc(file.id).update({name:value})
-                  // setText(
-                  //   text=>{
-                  //   const diff = jdf.diff( text, data.name )
-                  //   console.log(diff);
-                  //   const patch = jdf.patch(text,diff)
-                  //   console.log(patch);
-                  //   return text
-                  // })
-                }, 400
-              )
-              setText(value)
-              // db.collection('files').doc(file.id).update({name:value})
-            }}
-            value={text}
-          />
-        }
 
-        {/* {isTokenFound && <h1> Notification permission enabled 👍🏻 </h1>}
-        {!isTokenFound && <h1> Need notification permission ❗️ </h1>} */}
-        
-        {/* <p>
-          message:{notification.title}
-        </p>
-        <p>
-          body:{notification.body}
-        </p> */}
-      
+        <Editor />      
       </header>
     </div>
   );
 }
 
 export default App;
+
+  
