@@ -26,8 +26,6 @@ function App() {
     const changes = await db.collection('files').doc('OyLpbZIyX6mmH64lgRcw').collection('changes').get()
 
     const myFile = await doc.get()
-    console.log('mf',myFile);  
-    console.log('changes',changes.docs);  
     setFile(doc)
     setText(myFile.data()?.name||'')
 

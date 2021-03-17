@@ -1,5 +1,5 @@
 import axios from 'axios';
-import firebase from 'firebase/app';
+import firebaseApp from 'firebase/app';
 import 'firebase/firestore';
 // import 'firebase/messaging';
 
@@ -11,8 +11,8 @@ const firebaseConfig = {
   messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
   appId: process.env.REACT_APP_APP_ID,
 };
-firebase.initializeApp(firebaseConfig);
-export const db = firebase.firestore()
+export const firebase = firebaseApp.initializeApp(firebaseConfig);
+export const db = firebaseApp.firestore()
 // export const getToken = (setTokenFound) => {
 //   return messaging.getToken({vapidKey: process.env.REACT_APP_VAPID_API})
 //   .then((currentToken) => {
