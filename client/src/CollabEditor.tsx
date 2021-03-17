@@ -185,70 +185,75 @@ function Editor ( ) {
       view.focus()
       // add listener
       stepsRef.onSnapshot(async (snapshot) => {
-        const latestDocumenntState = currentState || currentDocumentState
-        
-        const localDocumentVersion :number|undefined = collab.sendableSteps(latestDocumenntState)?.version 
-        const serverVersion = snapshot.docs.length
-        const docChanges = snapshot.docChanges()
-        
-        log('serverVersion', serverVersion)
-        log('localDocumentVersion', localDocumentVersion)
-        log('latestDocumenntState', latestDocumenntState)
-        if(!localDocumentVersion){
-          return
-        }
-        if( snapshot.docs.length !== localDocumentVersion || mySteps.length ){
+        setCurrentState((currentState)=>{
+          const latestDocumenntState = currentState || currentDocumentState
+          // const localDocumentVersion :number|undefined = collab.sendableSteps(latestDocumenntState)?.version 
+          const localDocumentVersion :number|undefined = collab.getVersion(latestDocumenntState)
+          const serverVersion = snapshot.docs.length
+          const docChanges = snapshot.docChanges()
           
-          const steps :Step<SchemaType>[] = []
-          const clientIds :string[] = []
-          snapshot.docChanges()
-          .forEach((docChange) => {
-            const data = docChange.doc.data();
-            const step =Step.fromJSON(schema, JSON.parse(data.step))
-            const id = String(data.userId)
-            steps.push(step)
-            clientIds.push(id)
-          });
-
-          try{
-
-            const transaction = collab.receiveTransaction<SchemaType>(view.state, steps, clientIds);
-            // doc1 + transaction = doc2
-            const newState = view.state.apply(transaction);
-            view.updateState(newState);            
-          }catch(e){
-            console.error(e)
+          log('serverVersion', serverVersion)
+          log('localDocumentVersion', localDocumentVersion)
+          // if our version is the current version 
+          if(localDocumentVersion === serverVersion){
+            log('=')
+            return currentState
           }
-        }
-        else{
-          // const currentStepId = stepIdRef.current || mySteps.length
-          const currentStepId:number  = collab.sendableSteps(view.state)?.version || mySteps.length
-          
-          let onRemote = await stepsRef
-            .where('stepId', '>', currentStepId )
-            .orderBy('stepId', 'asc')
-            .get();
-          
-          const newDocs = onRemote.docs.map(doc => doc.data());
-        
-          const clientIDs = newDocs.map(({ id }) => id);
-        
-          const steps = newDocs.map(({ step }) => Step.fromJSON(schema, JSON.parse(step)));
-          try{
+          else if( true ){
+            // if our version outdated 
+            const steps :Step<SchemaType>[] = []
+            const clientIds :string[] = []
+            docChanges
+            .forEach((docChange) => {
+              const data = docChange.doc.data();
+              const step =Step.fromJSON(schema, JSON.parse(data.step))
+              const id = String(data.userId)
+              steps.push(step)
+              clientIds.push(id)
+            });
 
-            const transaction = collab.receiveTransaction<SchemaType>(view.state, steps, clientIDs);
-            // doc1 + transaction = doc2
-            const newState = view.state.apply(transaction);
-            log('tt',transaction);
-            log(newState);
-            view.updateState(newState);
+            try{
+              const transaction = collab.receiveTransaction<SchemaType>(currentState!, steps, clientIds);
+              // doc1 + transaction = doc2
+              const newState = currentState!.apply(transaction);
+              
+              view.updateState(newState);
+              return newState
+            }catch(e){
+              console.error(e)
+              return currentState
+            }
+          }
+          else{
+            // // const currentStepId = stepIdRef.current || mySteps.length
+            // const currentStepId:number  = collab.sendableSteps(view.state)?.version || mySteps.length
             
-            const newDocsCount = newDocs.length 
-            stepIdRef.current! += newDocsCount
-          }catch(e){
-            console.error(e)
+            // let onRemote = await stepsRef
+            //   .where('stepId', '>', currentStepId )
+            //   .orderBy('stepId', 'asc')
+            //   .get();
+            
+            // const newDocs = onRemote.docs.map(doc => doc.data());
+          
+            // const clientIDs = newDocs.map(({ id }) => id);
+          
+            // const steps = newDocs.map(({ step }) => Step.fromJSON(schema, JSON.parse(step)));
+            // try{
+
+            //   const transaction = collab.receiveTransaction<SchemaType>(view.state, steps, clientIDs);
+            //   // doc1 + transaction = doc2
+            //   const newState = view.state.apply(transaction);
+            //   log('tt',transaction);
+            //   log(newState);
+            //   view.updateState(newState);
+              
+            //   const newDocsCount = newDocs.length 
+            //   stepIdRef.current! += newDocsCount
+            // }catch(e){
+            //   console.error(e)
+            // }
           }
-        }
+        })
       })
     })()
   },[])
