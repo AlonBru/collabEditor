@@ -1,6 +1,7 @@
 import axios from 'axios';
-import firebaseApp from 'firebase/app';
+import firebase from 'firebase/app';
 import 'firebase/firestore';
+import 'firebase/auth';
 // import 'firebase/messaging';
 
 const firebaseConfig = {
@@ -11,8 +12,21 @@ const firebaseConfig = {
   messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
   appId: process.env.REACT_APP_APP_ID,
 };
-export const firebase = firebaseApp.initializeApp(firebaseConfig);
-export const db = firebaseApp.firestore()
+export const firebaseApp = firebase.initializeApp(firebaseConfig);
+export const auth = firebase.auth()
+auth.signInAnonymously()
+  .then((creds) => {
+    console.log('creds,',creds.user?.uid)
+  })
+  .catch((error) => {
+    var errorCode = error.code;
+    var errorMessage = error.message;
+    // ...
+  });
+
+
+
+export const db = firebase.firestore()
 // export const getToken = (setTokenFound) => {
 //   return messaging.getToken({vapidKey: process.env.REACT_APP_VAPID_API})
 //   .then((currentToken) => {
