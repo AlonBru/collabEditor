@@ -27,6 +27,11 @@ const {log} = console
 const fileRef = db.collection('files').doc('testDoc')
 const stepsRef = (fileRef.collection('steps') as firebase.firestore.CollectionReference<StoredStep>)
 
+//@ts-ignore
+interface DebounceEditorProps extends DirectEditorProps {
+  dispatchTransaction(this: DebouncedEditor, transaction: PMTransaction): void;
+};
+
 class DebouncedEditor extends EditorView{
   debounceTimer:number|null = null;
   sendSteps (sendableSteps:ReturnType<typeof collab['sendableSteps']>){  
@@ -60,6 +65,7 @@ class DebouncedEditor extends EditorView{
       });
     }
   }
+
 }
 
 class FireStoreCollab {
@@ -96,54 +102,15 @@ class FireStoreCollab {
     
     this.currentDocumentState = fireStoreCollab.currentDocumentState
     this.view = this.createView();
+    
     this.view.focus()
-    // add listener
-    stepsRef.onSnapshot(async (snapshot) => {
-      const { currentDocumentState, view } = this
-      // last state we pulled
-      const latestDocumenntState = this.currentDocumentState
-      const localDocumentVersion :number|undefined = collab.getVersion(latestDocumenntState)
-      
-      // latest state from server 
-      const serverVersion = snapshot.docs.length
-      const docChanges = snapshot.docChanges()
-      
-      if ( localDocumentVersion !== collab.getVersion(view.state)){
-        // TODO rebasing
-        log('snapshot needs rebase')
-        log('localDocumentVersion', localDocumentVersion)
-        log('viewVersion', collab.getVersion(view.state))
-        log('serverVersion', serverVersion)
-      }
-      if(localDocumentVersion !== serverVersion){
-        // if our version is outdated 
-        const steps :Step<SchemaType>[] = []
-        const clientIds :string[] = []
-        docChanges
-        .forEach((docChange) => {
-          const data = docChange.doc.data();
-          const step =Step.fromJSON(schema, JSON.parse(data.step))
-          const id = String(data.creator)
-          steps.push(step)
-          clientIds.push(id)
-        });
 
-        try{
-          const transaction = collab.receiveTransaction<SchemaType>(currentDocumentState, steps, clientIds);
-          // doc1 + transaction = doc2
-          const updatedDocumentFromServer = currentDocumentState!.apply(transaction);
-          view.updateState(updatedDocumentFromServer);
-        }catch(e){
-          console.error(e)
-        }
-      }else{
-        // our version is latest
-      }
-    })
+    // add listener
+    stepsRef.onSnapshot(this.onStepsSnapshot) // TODO onError
   }
   
-  static async getDoc( fileId:string,view:EditorView,userId:string) { 
-    const fileRef = db.collection('files').doc(fileId)
+  static async getDoc(fileCollectionName:string='files', fileId:string, view:DebouncedEditor, userId:string ) { 
+    const fileRef = db.collection(fileCollectionName).doc(fileId)
     const stepsRef = (fileRef.collection('steps') as firebase.firestore.CollectionReference<StoredStep>)
     const stepClientIDs :number[] = []
     // const onNewSteps = []
@@ -174,11 +141,13 @@ class FireStoreCollab {
 
   private createView():DebouncedEditor {
     const editorDiv = document.querySelector('#editor')!;
-    const ediitorProps :DirectEditorProps = { 
+
+    const editorProps : DebounceEditorProps = { 
       state: this.currentDocumentState,
       dispatchTransaction:this.onTransaction,
     };
-    let view = new DebouncedEditor(editorDiv, ediitorProps);
+    //@ts-ignore
+    let view = new DebouncedEditor(editorDiv, editorProps);
     // const onTransaction = this.onTransaction();
     //   this.view.setProps({
     //     dispatchTransaction:this.onTransaction(view),
@@ -216,79 +185,49 @@ class FireStoreCollab {
   }
 
   
-
-  private async onStepsSnapshot (stepsSnapshot:firebase.firestore.QuerySnapshot<StoredStep>) {
+  // called when once on setup, then again every time steps collection is updated
+  private async onStepsSnapshot ( stepsSnapshot:firebase.firestore.QuerySnapshot<StoredStep> ) {
     const latestDocumenntState = this.currentDocumentState
-      // const localDocumentVersion :number|undefined = collab.sendableSteps(latestDocumenntState)?.version 
-      const localDocumentVersion :number = this.version
-      const viewDocumentVersion :number = collab.getVersion(this.view.state)
-      const serverVersion = stepsSnapshot.docs.length
-      const newChanges = stepsSnapshot.docChanges()
-      
-      log('serverVersion', serverVersion)
-      log('localDocumentVersion', localDocumentVersion)
-      // if our version is the current version 
-      if(localDocumentVersion === serverVersion){
-        return
-      }
-      else if ( localDocumentVersion !== viewDocumentVersion){
-        log('rebase')
-      }
-      else {
-        // if our  version outdated 
-        const steps :Step<SchemaType>[] = []
-        const clientIds :string[] = []
-        newChanges
-        .forEach((docChange) => {
-          const data = docChange.doc.data();
-          const step =Step.fromJSON(schema, JSON.parse(data.step))
-          const id = String(data.creator)
-          steps.push(step)
-          clientIds.push(id)
-        });
+    // const localDocumentVersion :number|undefined = collab.sendableSteps(latestDocumenntState)?.version 
+    const localDocumentVersion :number = this.version
+    const serverVersion = stepsSnapshot.docs.length
+    const newChanges = stepsSnapshot.docChanges()
 
-        try{
-          const currentState = this.view.state
-          const transaction = collab.receiveTransaction<SchemaType>(currentState, steps, clientIds);
-          // doc1 + transaction = doc2
-          const newState = currentState.apply(transaction);
-          
-          this.view.updateState(newState);
-          this.currentDocumentState = newState
-        }catch(e){
-          console.error(e)
-          return 
-        }
-      }
-      // else{
-      //   // // const currentStepId = stepIdRef.current || mySteps.length
-      //   // const currentStepId:number  = collab.sendableSteps(view.state)?.version || mySteps.length
-        
-      //   // let onRemote = await stepsRef
-      //   //   .where('stepId', '>', currentStepId )
-      //   //   .orderBy('stepId', 'asc')
-      //   //   .get();
-        
-      //   // const newDocs = onRemote.docs.map(doc => doc.data());
-      
-      //   // const clientIDs = newDocs.map(({ id }) => id);
-      
-      //   // const steps = newDocs.map(({ step }) => Step.fromJSON(schema, JSON.parse(step)));
-      //   // try{
+    // if our version is the current version 
+    if(localDocumentVersion === serverVersion) {
+      return
+    }
+    // if our version outdated
+    else {
+      const newSteps :Step<SchemaType>[] = []
+      const stepsBy :string[] = []
+      newChanges
+      .forEach((docChange) => {
+        const data = docChange.doc.data();
+        const step =Step.fromJSON(schema, JSON.parse(data.step))
+        const id = String(data.creator)
+        newSteps.push(step)
+        stepsBy.push(id)
+      });
 
-      //   //   const transaction = collab.receiveTransaction<SchemaType>(view.state, steps, clientIDs);
-      //   //   // doc1 + transaction = doc2
-      //   //   const newState = view.state.apply(transaction);
-      //   //   log('tt',transaction);
-      //   //   log(newState);
-      //   //   view.updateState(newState);
-          
-      //   //   const newDocsCount = newDocs.length 
-      //   //   stepIdRef.current! += newDocsCount
-      //   // }catch(e){
-      //   //   console.error(e)
-      //   // }
+      const transaction = collab.receiveTransaction<SchemaType>(latestDocumenntState, newSteps, stepsBy);
+      const stateUpdatedWithRemoteChanges = latestDocumenntState.apply(transaction);
+
+      // const viewDocumentVersion :number = collab.getVersion(this.view.state)
+      // // if our version outdated, and local edits are stored    
+      // if ( localDocumentVersion !== viewDocumentVersion){
+        //   log('rebase')
       // }
+      
+      try{
+        
+        this.view.updateState(stateUpdatedWithRemoteChanges);
+        this.currentDocumentState = stateUpdatedWithRemoteChanges
+      }catch(e){
+        console.error(e)
+        return 
+      }
+    }
   }
 
   //receives the client's current version, steps to add, and (TODO) client's Id
@@ -374,8 +313,8 @@ function sendSteps(newState: EditorState<SchemaType>, stepId:number | null) {
 }
 
 function Editor ( ) { 
+  
   const [currentState,setCurrentState] = useState<EditorState|null>(null)
-
   const viewRef = useRef<EditorView|null>(null)
   const stepIdRef = useRef<number|null>(null)
   const debounceRef = useRef<number|null>(null)
