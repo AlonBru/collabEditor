@@ -14,15 +14,6 @@ const firebaseConfig = {
 };
 export const firebaseApp = firebase.initializeApp(firebaseConfig);
 export const auth = firebase.auth()
-auth.signInAnonymously()
-  .then((creds) => {
-    console.log('creds,',creds.user?.uid)
-  })
-  .catch((error) => {
-    var errorCode = error.code;
-    var errorMessage = error.message;
-    // ...
-  });
 
 
 
