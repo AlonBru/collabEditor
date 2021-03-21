@@ -36,11 +36,12 @@ class DebouncedEditorView extends EditorView{
   debounceTimer:number|null = null;
   fileRef :firebase.firestore.DocumentReference<firebase.firestore.DocumentData> // add document type ( as it is in firestore)
   stepsRef:FireStoreCollab['stepsRef'];
-
-  constructor(editorViewProps: ConstructorParameters<typeof EditorView> , fileRef:DebouncedEditorView['fileRef'], stepsRef: FireStoreCollab['stepsRef']){
+  userId:string;
+  constructor(editorViewProps: ConstructorParameters<typeof EditorView> , fileRef:DebouncedEditorView['fileRef'], stepsRef: FireStoreCollab['stepsRef'],userId:string){
     super(...editorViewProps)
     this.fileRef = fileRef 
     this.stepsRef = stepsRef 
+    this.userId = userId 
   }
 
   sendSteps (sendableSteps: NonNullable<ReturnType<typeof collab['sendableSteps']>>){  
@@ -63,7 +64,7 @@ class DebouncedEditorView extends EditorView{
         const stepItem: StoredStep = {
           stepId: Number(newId),
           step: JSON.stringify(step.toJSON()),
-          creator:auth.currentUser?.uid,
+          creator:this.userId,
           timestamp: new Date()
         };
         transaction.set(newStepRef, stepItem);
@@ -94,7 +95,7 @@ class FireStoreCollab {
   //TODO userId : string[];
   //XXX onNewSteps : [];
   
-  constructor(fireStoreCollab?:FireStoreCollabStarter) {
+  constructor(fireStoreCollab?:FireStoreCollabStarter&{userId:string}) {
     // do not call directly, instead use getDoc()
     if(!fireStoreCollab){
       throw new Error('Do not call this constructor directly, instead use FireStoreCollab.getDoc()')
@@ -104,7 +105,7 @@ class FireStoreCollab {
     this.doc = fireStoreCollab.doc
     
     this.currentDocumentState = fireStoreCollab.currentDocumentState
-    this.view = this.createView();
+    this.view = this.createView(fireStoreCollab.userId);
     this.view.focus()
 
     this.onStepsSnapshot.bind(this)
@@ -121,14 +122,6 @@ class FireStoreCollab {
     
     const content = myDoc.data()?.value
     const version = mySteps.length;
-    log('v', version,
-    mySteps.map(step=>Number(step.id)).sort((a,b)=>(a-b))
-    // .forEach((n,i,a)=>{
-    //   if( n+1 != a[i+1]){
-    //     log(n)
-    //   }
-    // })
-    )
     try{
       
       const state = EditorState.create(
@@ -136,31 +129,31 @@ class FireStoreCollab {
           schema:schema,
           plugins:[
             keymap(baseKeymap),
-            collab.collab({version})
+            collab.collab({version,clientID:userId})
           ],
           doc:Node.fromJSON(schema,JSON.parse(content))
         },
       )
-        
+        log((state as any) )
         return new FireStoreCollab({
           fileRef,
           stepsRef,
           doc : state.doc,
           currentDocumentState:state,
-          
+          userId
         })  
       }catch(err){
         console.error(err)
       }
     }
       
-  private createView():DebouncedEditorView {
+  private createView(userId:string):DebouncedEditorView {
     const editorDiv = document.querySelector('#editor')!;
     const editorProps : DirectEditorProps = { 
       state: this.currentDocumentState,
     };
     
-    let view = new DebouncedEditorView( [editorDiv, editorProps] , this.fileRef, this.stepsRef );
+    let view = new DebouncedEditorView( [editorDiv, editorProps] , this.fileRef, this.stepsRef, userId );
 
     const onTransaction = this.onTransaction.bind(view,this.currentDocumentState)
     view.setProps({
@@ -189,6 +182,7 @@ class FireStoreCollab {
       } 
       // if the transaction does not change the view's content, but stored steps are available to send  
       else {
+        log('sendingSteps')
         this.sendSteps( stepsToSend );
       }
     }
@@ -206,7 +200,6 @@ class FireStoreCollab {
     const localDocumentVersion :number = collab.getVersion(latestPulledDocumentState)
     const serverVersion = stepsSnapshot.docs.length
     const newChanges = stepsSnapshot.docChanges()
-
     // if our version is the current version 
     if(localDocumentVersion === serverVersion) {
       return
@@ -225,8 +218,8 @@ class FireStoreCollab {
         stepsBy.push(id)
       });
       const transaction = collab
-        .receiveTransaction<SchemaType>(latestPulledDocumentState, newSteps, stepsBy)
-      const stateWithRemoteChanges = latestPulledDocumentState.apply(transaction);
+        .receiveTransaction<SchemaType>(this.view.state, newSteps, stepsBy)
+      const stateWithRemoteChanges = this.view.state.apply(transaction);
       try{  
         this.view.updateState(stateWithRemoteChanges);
         this.currentDocumentState = stateWithRemoteChanges
@@ -285,24 +278,13 @@ class FireStoreCollab {
 function Editor ( ) { 
   
   const [ firestoreCollab,setFirestoreCollab ] = useState<FireStoreCollab>()
-  const [currentState,setCurrentState] = useState<EditorState|null>(null)
-  const viewRef = useRef<EditorView|null>(null)
-  const stepIdRef = useRef<number|null>(null)
-  const debounceRef = useRef<number|null>(null)
+  const [ name,setName] = useState<string>('')
 
   useEffect(()=>{
-    auth.signInAnonymously()
-    .then(async (creds) => {
-      const userId = creds.user?.uid||'noOne'
-      const FireStoreCollabObject = await FireStoreCollab.getDoc( 'files', 'testDoc', userId )
-      setFirestoreCollab(FireStoreCollabObject)
-    })
-    .catch((error) => {
-      const errorCode = error.code;
-      const errorMessage = error.message;
-      console.error(errorMessage)
-    });
-  },[])
+      const userId = name
+      FireStoreCollab.getDoc( 'files', 'testDoc', userId )
+      .then( (FireStoreCollabObject )=> setFirestoreCollab(FireStoreCollabObject))
+  },[name])
   useEffect(()=>{
     if(firestoreCollab){
       const unsubscribeFromSteps = firestoreCollab
@@ -325,12 +307,13 @@ function Editor ( ) {
         (await firestoreCollab?.stepsRef.get())?.docs.forEach(doc=>doc.ref.delete())
       }}
     >blah</button>
+    <input value={name} onChange={(e)=>setName(e.target.value)} />
     <div style={{
     maxHeight:'400px',
     width:'600px',
     overflow:'auto'
     }} id='editor' />
-    </div>
+  </div>
 
 }
 
@@ -377,7 +360,7 @@ export default Editor;
 // // watching for remote steps
 // stepsRef.onSnapshot(async () => {
 //   let remote = await stepsRef
-//     .where('stepId', 's', currentStepId)
+//     .where('stepId', '>', currentStepId)
 //     .orderBy('stepId', 'asc')
 //     .get();
 //   remote = remote.docs.map(doc => doc.data());
