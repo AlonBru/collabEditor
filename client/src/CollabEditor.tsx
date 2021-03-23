@@ -12,6 +12,7 @@ import * as collab from "prosemirror-collab"
 import firebase from 'firebase' 
 import {db,auth} from './firebase'
 import './Editor.css';
+import { stat } from 'fs/promises';
 
 type SchemaType = typeof schema
 
@@ -44,10 +45,11 @@ class DebouncedEditorView extends EditorView{
     this.userId = userId 
   }
 
-  sendSteps (sendableSteps: NonNullable<ReturnType<typeof collab['sendableSteps']>>){  
+  sendSteps (sendableSteps: NonNullable< ReturnType< typeof collab['sendableSteps'] >> ){  
     db.runTransaction<void>(async (transaction) => {
+      log('sending')
+      console.assert(sendableSteps,String(sendableSteps))
       const versionBeforeChanges = sendableSteps.version
-      log(versionBeforeChanges)
       //test if step with this stepId currently exists (someone else's changes were pushed already)
       const nextStepId:number =  versionBeforeChanges + 1;
       const nextStepRef = this.stepsRef.doc( String( nextStepId ));
@@ -55,8 +57,27 @@ class DebouncedEditorView extends EditorView{
       if (nextStepDoc.exists) {
         console.error('rebase required!');
         // throw new Error('rebase required!')
+        log(nextStepDoc.data())
+        const newChanges = await this.stepsRef
+          .where('stepId', '>', versionBeforeChanges)
+          .orderBy('stepId', 'asc')
+          .get()
 
-      }
+        const newSteps :Step<SchemaType>[] = []
+        const stepsBy :string[] = []
+    
+        newChanges.forEach((docChange) => {
+          const data = docChange.data();
+          const step =Step.fromJSON(schema, JSON.parse(data.step))
+          const id = String(data.creator)
+          newSteps.push(step)
+          stepsBy.push(id)
+        });
+        for (let step of sendableSteps.steps){
+
+        }
+
+      } 
       sendableSteps?.steps.forEach((step, i) => {
         const newId :number = nextStepId + i;
         log(newId)
@@ -69,12 +90,12 @@ class DebouncedEditorView extends EditorView{
         };
         transaction.set(newStepRef, stepItem);
       });
-
       // TBD: how do we handle storing value
       const newState = this.state
       const newValue = JSON.stringify(newState.toJSON().doc);
       transaction.update( this.fileRef, { value: newValue })
       // this.fileRef.update();
+    
 
     });
   }
@@ -106,7 +127,7 @@ class FireStoreCollab {
     
     this.currentDocumentState = fireStoreCollab.currentDocumentState
     this.view = this.createView(fireStoreCollab.userId);
-    this.view.focus()
+    // this.view.focus()
 
     this.onStepsSnapshot.bind(this)
   }
@@ -118,10 +139,12 @@ class FireStoreCollab {
     // const onNewSteps = []
 
     const myDoc = await fileRef.get()
-    const mySteps = ( await stepsRef.get() ).docs
+    const mySteps = (await stepsRef.orderBy('stepId','asc').get())
     
     const content = myDoc.data()?.value
-    const version = mySteps.length;
+    // checking the version by last step instead of step count because sometimes it seems a step number is skipped, reason TBD
+    const version = mySteps.docs[mySteps.size-1]?.data().stepId||0; 
+    console.assert(mySteps.size === version, `count:${mySteps.size} version:${version}`)
     try{
       
       const state = EditorState.create(
@@ -134,18 +157,18 @@ class FireStoreCollab {
           doc:Node.fromJSON(schema,JSON.parse(content))
         },
       )
-        log((state as any) )
-        return new FireStoreCollab({
-          fileRef,
-          stepsRef,
-          doc : state.doc,
-          currentDocumentState:state,
-          userId
-        })  
-      }catch(err){
+      log((state as any) )
+      return new FireStoreCollab({
+        fileRef,
+        stepsRef,
+        doc : state.doc,
+        currentDocumentState:state,
+        userId
+      })  
+    }catch(err){
         console.error(err)
-      }
     }
+  }
       
   private createView(userId:string):DebouncedEditorView {
     const editorDiv = document.querySelector('#editor')!;
@@ -171,18 +194,20 @@ class FireStoreCollab {
     
     // whether the transaction contains changes the view's content ( as opposed to selection only )
     const hasChanges = transaction.docChanged
-    // the view state + last transaction
+
     let viewStateWithLatestChanges :EditorState = currentViewState.apply(transaction);    
     const stepsToSend = collab.sendableSteps(viewStateWithLatestChanges)
 
     if(stepsToSend){
+      log(stepsToSend)
+      // if the transaction does change the view's content  
       if ( Boolean(hasChanges) ) {
-        const sendSteps = this.sendSteps.bind( this, stepsToSend! );
+
+        const sendSteps = this.sendSteps.bind( this, stepsToSend );
         this.debounceTimer = setTimeout( sendSteps , 800) as unknown as number;
       } 
       // if the transaction does not change the view's content, but stored steps are available to send  
       else {
-        log('sendingSteps')
         this.sendSteps( stepsToSend );
       }
     }
@@ -195,7 +220,6 @@ class FireStoreCollab {
   }
   // called when once on setup, then again every time steps collection is updated
   private async onStepsSnapshot (this:FireStoreCollab, stepsSnapshot:firebase.firestore.QuerySnapshot<StoredStep> ) {
-
     const latestPulledDocumentState = this.currentDocumentState
     const localDocumentVersion :number = collab.getVersion(latestPulledDocumentState)
     const serverVersion = stepsSnapshot.docs.length
@@ -217,10 +241,10 @@ class FireStoreCollab {
         newSteps.push(step)
         stepsBy.push(id)
       });
-      const transaction = collab
-        .receiveTransaction<SchemaType>(this.view.state, newSteps, stepsBy)
-      const stateWithRemoteChanges = this.view.state.apply(transaction);
       try{  
+        const transaction = collab
+          .receiveTransaction<SchemaType>(this.view.state, newSteps, stepsBy)
+        const stateWithRemoteChanges = this.view.state.apply(transaction);
         this.view.updateState(stateWithRemoteChanges);
         this.currentDocumentState = stateWithRemoteChanges
       }catch(e){
@@ -241,7 +265,7 @@ class FireStoreCollab {
       const nextVersion = String(version + 1)
       const doc = await transaction.get(this.stepsRef.doc(nextVersion))
       if (doc.exists) {
-        throw new Error('rebase required!')
+        throw new Error('rebase required')
       }
       stepsToSend.forEach((step, i) => {
         const newId = String(version + i + 1);
@@ -288,7 +312,7 @@ function Editor ( ) {
   useEffect(()=>{
     if(firestoreCollab){
       const unsubscribeFromSteps = firestoreCollab
-      ?.stepsRef.onSnapshot(
+      .stepsRef.onSnapshot(
         { 
           next:firestoreCollab.onSnapshot(),
           error:(e)=>{console.error()}
@@ -307,7 +331,7 @@ function Editor ( ) {
         (await firestoreCollab?.stepsRef.get())?.docs.forEach(doc=>doc.ref.delete())
       }}
     >blah</button>
-    <input value={name} onChange={(e)=>setName(e.target.value)} />
+    <input value={name} onChange={(e)=>{setName(e.target.value)}} />
     <div style={{
     maxHeight:'400px',
     width:'600px',
@@ -328,8 +352,7 @@ function collabEditor(authority:any, place:any) {
       view.updateState(newState)
       let sendable = collab.sendableSteps(newState)
       if (sendable)
-        authority.receiveSteps(sendable.version, sendable.steps,
-                               sendable.clientID)
+        authority.receiveSteps(sendable.version, sendable.steps, sendable.clientID)
     }
   })
 
