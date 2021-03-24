@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef} from 'react';
 import {EditorState, Transaction as PMTransaction, Selection } from "prosemirror-state"
-import { ReplaceStep, replaceStep, Step, StepResult } from "prosemirror-transform"
+import { Mapping, ReplaceStep, replaceStep, Step, StepMap, StepResult } from "prosemirror-transform"
 import {DirectEditorProps, EditorView} from "prosemirror-view"
 import {schema} from "prosemirror-schema-basic"
 import {DOMParser, Schema, Node, Slice} from "prosemirror-model"
@@ -12,7 +12,6 @@ import * as collab from "prosemirror-collab"
 import firebase from 'firebase' 
 import {db,auth} from './firebase'
 import './Editor.css';
-import { stat } from 'fs/promises';
 
 type SchemaType = typeof schema
 
@@ -45,13 +44,11 @@ class DebouncedEditorView extends EditorView{
     this.userId = userId 
   }
 
-  sendSteps (sendableSteps: NonNullable< ReturnType< typeof collab['sendableSteps'] >> ){  
+  sendSteps ( {version:versionBeforeChanges, steps,clientID }: NonNullable< ReturnType< typeof collab['sendableSteps'] >> ){  
     db.runTransaction<void>(async (transaction) => {
       log('sending')
-      console.assert(sendableSteps,String(sendableSteps))
-      const versionBeforeChanges = sendableSteps.version
       //test if step with this stepId currently exists (someone else's changes were pushed already)
-      const nextStepId:number =  versionBeforeChanges + 1;
+      let nextStepId:number =  versionBeforeChanges + 1;
       const nextStepRef = this.stepsRef.doc( String( nextStepId ));
       const nextStepDoc = await transaction.get(nextStepRef);
       if (nextStepDoc.exists) {
@@ -59,26 +56,41 @@ class DebouncedEditorView extends EditorView{
         // throw new Error('rebase required!')
         log(nextStepDoc.data())
         const newChanges = await this.stepsRef
-          .where('stepId', '>', versionBeforeChanges)
-          .orderBy('stepId', 'asc')
-          .get()
+        .where('stepId', '>', versionBeforeChanges)
+        .orderBy('stepId', 'asc')
+        .get()
 
-        const newSteps :Step<SchemaType>[] = []
+        const newStepsMaps :StepMap[] = []
         const stepsBy :string[] = []
-    
         newChanges.forEach((docChange) => {
           const data = docChange.data();
           const step =Step.fromJSON(schema, JSON.parse(data.step))
           const id = String(data.creator)
-          newSteps.push(step)
+          newStepsMaps.push(step.getMap())
           stepsBy.push(id)
         });
-        for (let step of sendableSteps.steps){
-
+        const mappedSteps = steps.reduce<Step[]>(
+          (acc,step,i,arr)=>{
+            const invertedMap = (acc[acc.length-1] as Step|undefined)?.getMap().invert()
+            const stepsToMap = invertedMap? [invertedMap, ...newStepsMaps]: newStepsMaps;
+            const mapping = new Mapping(
+              stepsToMap
+            )
+            const maybeMappedStep = step.map(mapping)
+            const stepsArray = [...acc]
+            maybeMappedStep && stepsArray.push(maybeMappedStep)
+            return stepsArray
+          },
+          []
+        )
+        if(mappedSteps){
+          nextStepId += newStepsMaps.length 
+          steps = mappedSteps
+        }else{
+          return
         }
-
       } 
-      sendableSteps?.steps.forEach((step, i) => {
+      steps.forEach((step, i) => {
         const newId :number = nextStepId + i;
         log(newId)
         const newStepRef = this.stepsRef.doc(String( newId ));
@@ -95,8 +107,6 @@ class DebouncedEditorView extends EditorView{
       const newValue = JSON.stringify(newState.toJSON().doc);
       transaction.update( this.fileRef, { value: newValue })
       // this.fileRef.update();
-    
-
     });
   }
 }
@@ -361,7 +371,6 @@ function collabEditor(authority:any, place:any) {
     view.dispatch(
       collab.receiveTransaction(view.state, newData.steps, newData.clientIDs))
   })
-
   return view
 }
 
