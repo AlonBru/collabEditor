@@ -111,7 +111,7 @@ class DebouncedEditorView extends EditorView{
   }
 }
 
-type FireStoreCollabStarter = Omit<FireStoreCollab, 'view' | 'receiveSteps' | 'stepsSince' | 'onSnapshot' | 'destroyView'>;
+type FireStoreCollabStarter = Omit<FireStoreCollab, 'view' | 'receiveSteps' | 'stepsSince' | 'onSnapshot' | 'destroyView'| 'getVersion'>;
 
 class FireStoreCollab {
   // firestore refs
@@ -126,7 +126,7 @@ class FireStoreCollab {
   //TODO userId : string[];
   //XXX onNewSteps : [];
   
-  constructor(fireStoreCollab?:FireStoreCollabStarter&{userId:string}) {
+  constructor( fireStoreCollab?:FireStoreCollabStarter&{userId:string}) {
     // do not call directly, instead use getDoc()
     if(!fireStoreCollab){
       throw new Error('Do not call this constructor directly, instead use FireStoreCollab.getDoc()')
@@ -230,6 +230,7 @@ class FireStoreCollab {
   }
   // called when once on setup, then again every time steps collection is updated
   private async onStepsSnapshot (this:FireStoreCollab, stepsSnapshot:firebase.firestore.QuerySnapshot<StoredStep> ) {
+    log(stepsSnapshot.docChanges().map(step=>step.doc.data()))
     const latestPulledDocumentState = this.currentDocumentState
     const localDocumentVersion :number = collab.getVersion(latestPulledDocumentState)
     const serverVersion = stepsSnapshot.docs.length
@@ -297,7 +298,10 @@ class FireStoreCollab {
 
     
   }
-
+  getVersion(){
+    const version = collab.getVersion(this.view.state)
+    return version
+  }
   async stepsSince( version:number ) {
     const steps  = await this.stepsRef
     .where('stepId', '>', version)
@@ -310,24 +314,27 @@ class FireStoreCollab {
 }
 
 function Editor ( ) { 
-  
   const [ firestoreCollab,setFirestoreCollab ] = useState<FireStoreCollab>()
   const [ name,setName] = useState<string>('')
 
   useEffect(()=>{
-      const userId = name
-      FireStoreCollab.getDoc( 'files', 'testDoc', userId )
-      .then( (FireStoreCollabObject )=> setFirestoreCollab(FireStoreCollabObject))
+    const userId = name
+    FireStoreCollab.getDoc( 'files', 'testDoc', userId )
+    .then( (FireStoreCollabObject )=> setFirestoreCollab(FireStoreCollabObject))
   },[name])
   useEffect(()=>{
     if(firestoreCollab){
-      const unsubscribeFromSteps = firestoreCollab
-      .stepsRef.onSnapshot(
-        { 
-          next:firestoreCollab.onSnapshot(),
-          error:(e)=>{console.error()}
-        }
-      ) //TODO: Add onError
+      const version = firestoreCollab.getVersion()
+      log(version)
+      const unsubscribeFromSteps = firestoreCollab.stepsRef
+        .orderBy('stepId','asc')
+        .startAfter(version)
+        .onSnapshot(
+          { 
+            next:firestoreCollab.onSnapshot(),
+            error:(e)=>{console.error()}
+          }
+        ) //TODO: Add onError
       return ()=>{ 
         unsubscribeFromSteps();
         firestoreCollab.destroyView() 
@@ -341,14 +348,13 @@ function Editor ( ) {
         (await firestoreCollab?.stepsRef.get())?.docs.forEach(doc=>doc.ref.delete())
       }}
     >blah</button>
-    <input value={name} onChange={(e)=>{setName(e.target.value)}} />
+    <input value={name} onChange={( e ) => {setName(e.target.value)}} />
     <div style={{
     maxHeight:'400px',
     width:'600px',
     overflow:'auto'
     }} id='editor' />
   </div>
-
 }
 
 function collabEditor(authority:any, place:any) {
